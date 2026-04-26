@@ -215,52 +215,52 @@ const LocalLoraGalleryNode = {
                         <div class="locallora-selected-list"></div>
                         <div class="locallora-controls">
                             <div class="locallora-controls-row">
-                                <button class="toggle-all-btn">Toggle All</button>
-                                <input type="text" class="search-input" placeholder="Filter by Name..." style="flex-grow: 1;">
-                                <button class="save-preset-btn" title="Save current stack as preset">Save Preset</button>
+                                <button class="toggle-all-btn">切换全部</button>
+                                <input type="text" class="search-input" placeholder="按名称筛选..." style="flex-grow: 1;">
+                                <button class="save-preset-btn" title="保存当前堆叠为预设">保存预设</button>
                                 <div class="locallora-preset-container">
-                                    <button class="load-preset-btn">Load Preset ▼</button>
+                                    <button class="load-preset-btn">加载预设 ▼</button>
                                     <div class="preset-dropdown"></div>
                                 </div>
-                                <button class="clear-all-btn" title="Clear all selected LoRAs">Clear All</button>
+                                <button class="clear-all-btn" title="清除所有已选LoRA">清除全部</button>
                             </div>
                             
                             <div class="locallora-metadata-editor">
                                 <div class="locallora-controls-row">
-                                    <label style="font-size:12px;">Edit Tags (<span class="selected-count">0</span>):</label>
+                                    <label style="font-size:12px;">编辑标签 (<span class="selected-count">0</span>):</label>
                                     <div class="tag-editor-list lora-card-tags" style="flex-grow:1;"></div>
-                                    <input type="text" class="tag-editor-input" placeholder="Add tag..." style="width: 100px;">
+                                    <input type="text" class="tag-editor-input" placeholder="添加标签..." style="width: 100px;">
                                 </div>
                                 <div class="locallora-controls-row trigger-editor-row" style="display:none;">
-                                    <label style="font-size:12px;">Triggers:</label>
-                                    <input type="text" class="trigger-editor-input" placeholder="Enter trigger words..." style="flex-grow: 1;">
+                                    <label style="font-size:12px;">触发词:</label>
+                                    <input type="text" class="trigger-editor-input" placeholder="输入触发词..." style="flex-grow: 1;">
                                 </div>
                                 <div class="locallora-controls-row url-editor-row" style="display:none;">
                                     <label style="font-size:12px;">URL:</label>
-                                    <input type="text" class="url-editor-input" placeholder="Enter download URL..." style="flex-grow: 1;">
+                                    <input type="text" class="url-editor-input" placeholder="输入下载URL..." style="flex-grow: 1;">
                                 </div>
                             </div>
 
                             <div class="locallora-controls-row">
-                                <button class="tag-filter-mode-btn" title="Click to switch filter mode">OR</button>
+                                <button class="tag-filter-mode-btn" title="点击切换筛选模式">OR</button>
                                 <div class="tag-filter-input-wrapper">
-                                    <input type="text" class="tag-filter-input" placeholder="Filter by Tag...">
-                                    <button class="clear-tag-filter-btn" title="Clear Tag Filter">✖</button>
+                                    <input type="text" class="tag-filter-input" placeholder="按标签筛选...">
+                                    <button class="clear-tag-filter-btn" title="清除标签筛选">✖</button>
                                 </div>
                                 <div class="locallora-multiselect-tag">
                                     <div class="locallora-multiselect-tag-display">
-                                        Select Tags
+                                        选择标签
                                         <span class="locallora-multiselect-arrow">▼</span>
                                     </div>
                                     <div class="locallora-multiselect-tag-dropdown"></div>
                                 </div>
                                 <select class="folder-filter-select" style="max-width: 150px;">
-                                    <option value="">All Folders</option>
+                                    <option value="">全部文件夹</option>
                                 </select>
-                                <button class="toggle-gallery-btn" title="Toggle Gallery" style="margin-left: auto; flex-shrink: 0;">Hide Gallery</button>
+                                <button class="toggle-gallery-btn" title="切换画廊" style="margin-left: auto; flex-shrink: 0;">隐藏画廊</button>
                             </div>
                         </div>
-                        <div class="locallora-gallery"><p>Loading LoRAs...</p></div>
+                        <div class="locallora-gallery"><p>加载LoRA中...</p></div>
                     </div>
                 </div>
             `;
@@ -300,8 +300,8 @@ const LocalLoraGalleryNode = {
             };
 
             const updatePresetButtonText = (presetName = null) => {
-                loadPresetBtn.textContent = presetName ? `Preset: ${presetName} ▼` : "Load Preset ▼";
-                loadPresetBtn.title = presetName ? `Current Preset: ${presetName}` : "Load a saved preset";
+                loadPresetBtn.textContent = presetName ? `预设: ${presetName} ▼` : "加载预设 ▼";
+                loadPresetBtn.title = presetName ? `当前预设: ${presetName}` : "加载已保存的预设";
             };
 
             galleryEl.addEventListener('scroll', () => {
@@ -348,15 +348,15 @@ const LocalLoraGalleryNode = {
 
                     const trigLabel = document.createElement("span");
                     trigLabel.className = "lora-label";
-                    trigLabel.textContent = "Trig";
-                    trigLabel.title = "Enable/Disable Trigger Words";
+                    trigLabel.textContent = "触发词";
+                    trigLabel.title = "启用/禁用触发词";
                     trigLabel.style.marginLeft = "5px";
                     trigLabel.style.cursor = "help";
 
                     const trigInput = document.createElement("input");
                     trigInput.type = "checkbox";
                     trigInput.checked = item.use_trigger !== false; 
-                    trigInput.title = "Toggle Trigger Words";
+                    trigInput.title = "切换触发词";
                     trigInput.style.marginRight = "5px"; 
                     trigInput.addEventListener("change", (e) => { 
                         this.loraData[index].use_trigger = e.target.checked; 
@@ -396,7 +396,7 @@ const LocalLoraGalleryNode = {
                     const removeBtn = document.createElement("button");
                     removeBtn.className = "remove-lora-btn";
                     removeBtn.textContent = "✖";
-                    removeBtn.title = "Remove LoRA";
+                    removeBtn.title = "移除LoRA";
                     removeBtn.addEventListener("click", () => {
                         this.loraData.splice(index, 1);
                         renderSelectedList();
@@ -482,7 +482,7 @@ const LocalLoraGalleryNode = {
 
                         const triggerEl = card.querySelector('.lora-card-triggers');
                         if(triggerEl) {
-                           triggerEl.textContent = trigger_words || 'No triggers';
+                           triggerEl.textContent = trigger_words || '无触发词';
                            triggerEl.title = trigger_words || '';
                         }
                         card.dataset.triggerWords = trigger_words || '';
@@ -496,7 +496,7 @@ const LocalLoraGalleryNode = {
                             linkBtn.href = download_url;
                             linkBtn.target = '_blank';
                             linkBtn.className = 'card-btn lora-card-link-btn';
-                            linkBtn.title = 'Open download page';
+                            linkBtn.title = '打开下载页面';
                             linkBtn.innerHTML = '🔗';
                             linkBtn.addEventListener('click', e => e.stopPropagation());
                             card.prepend(linkBtn);
@@ -545,15 +545,15 @@ const LocalLoraGalleryNode = {
                         mediaHTML = `<img src="${previewUrl || empty_lora_image}" loading="lazy">`;
                     }
                     
-                    const linkBtnHTML = lora.download_url ? `<a href="${lora.download_url}" target="_blank" class="card-btn lora-card-link-btn" title="Open download page">🔗</a>` : '';
+                    const linkBtnHTML = lora.download_url ? `<a href="${lora.download_url}" target="_blank" class="card-btn lora-card-link-btn" title="打开下载页面">🔗</a>` : '';
 
                     card.innerHTML = `
-                        <div class="card-btn sync-civitai-btn" title="Sync with Civitai">☁️</div>
+                        <div class="card-btn sync-civitai-btn" title="同步Civitai">☁️</div>
                         ${linkBtnHTML}
                         <div class="locallora-media-container">${mediaHTML}</div>
                         <div class="locallora-lora-card-info">
                             <p>${lora.name}</p>
-                            <div class="lora-card-triggers" title="${lora.trigger_words}">${lora.trigger_words || 'No triggers'}</div>
+                            <div class="lora-card-triggers" title="${lora.trigger_words}">${lora.trigger_words || '无触发词'}</div>
                             <div class="lora-card-tags"></div>
                         </div>
                         <div class="card-btn edit-tags-btn">✏️</div>
@@ -695,11 +695,11 @@ const LocalLoraGalleryNode = {
             const renderFolders = (folders) => {
                 if (foldersRendered) return;
                 const currentVal = folderFilterSelect.value;
-                folderFilterSelect.innerHTML = `<option value="">All Folders</option>`;
+                folderFilterSelect.innerHTML = `<option value="">全部文件夹</option>`;
                 folders.forEach(folder => {
                     const option = document.createElement('option');
                     option.value = folder;
-                    option.textContent = folder === "." ? "Root" : folder.replaceAll('\\', '/');
+                    option.textContent = folder === "." ? "根目录" : folder.replaceAll('\\', '/');
                     folderFilterSelect.appendChild(option);
                 });
                 folderFilterSelect.value = currentVal;
@@ -720,11 +720,11 @@ const LocalLoraGalleryNode = {
                     const deleteBtn = document.createElement('span');
                     deleteBtn.className = 'delete-preset-btn';
                     deleteBtn.textContent = '✖';
-                    deleteBtn.title = 'Delete Preset';
+                    deleteBtn.title = '删除预设';
                     deleteBtn.onclick = async (e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        if (confirm(`Are you sure you want to delete preset "${name}"?`)) {
+                        if (confirm(`确定要删除预设 "${name}" 吗？`)) {
                             const res = await api.fetchApi("/localloragallery/delete_preset", {
                                 method: "POST", headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ name }),
@@ -921,7 +921,7 @@ const LocalLoraGalleryNode = {
                         const contentHeight = selectedListEl.scrollHeight + controlsEl.offsetHeight;
                         this.size[1] = contentHeight + HEADER_HEIGHT;
                         mainContainer.classList.add("gallery-collapsed");
-                        toggleGalleryBtn.textContent = "Show Gallery";
+                        toggleGalleryBtn.textContent = "显示画廊";
                         this.setDirtyCanvas(true, true);
                     }, 0);
                 }
@@ -964,7 +964,7 @@ const LocalLoraGalleryNode = {
                             if (!linkBtn) {
                                 linkBtn = document.createElement('a');
                                 linkBtn.className = 'card-btn lora-card-link-btn';
-                                linkBtn.title = 'Open download page';
+                                linkBtn.title = '打开下载页面';
                                 linkBtn.innerHTML = '🔗';
                                 linkBtn.target = '_blank';
                                 linkBtn.addEventListener("click", (e) => e.stopPropagation());
@@ -998,7 +998,7 @@ const LocalLoraGalleryNode = {
                         
                         const triggerDisplayEl = selectedCard.querySelector('.lora-card-triggers');
                         if(triggerDisplayEl) {
-                            triggerDisplayEl.textContent = newTriggers || 'No triggers';
+                            triggerDisplayEl.textContent = newTriggers || '无触发词';
                             triggerDisplayEl.title = newTriggers;
                         }
                         
@@ -1071,7 +1071,7 @@ const LocalLoraGalleryNode = {
                 });
               
                 savePresetBtn.addEventListener("click", async () => {
-                    const presetName = prompt("Enter a name for this preset:", "");
+                    const presetName = prompt("输入预设名称:", "");
                     if (presetName && this.loraData.length > 0) {
                         const res = await api.fetchApi("/localloragallery/save_preset", {
                             method: "POST", headers: { "Content-Type": "application/json" },
@@ -1096,11 +1096,11 @@ const LocalLoraGalleryNode = {
                         const contentHeight = selectedListEl.scrollHeight + controlsEl.offsetHeight;
                         this.size[1] = contentHeight + HEADER_HEIGHT;
                         mainContainer.classList.add("gallery-collapsed");
-                        toggleGalleryBtn.textContent = "Show Gallery";
+                        toggleGalleryBtn.textContent = "显示画廊";
                     } else {
                         this.size[1] = this.expandedHeight;
                         mainContainer.classList.remove("gallery-collapsed");
-                        toggleGalleryBtn.textContent = "Hide Gallery";
+                        toggleGalleryBtn.textContent = "隐藏画廊";
                     }
                     
                     LocalLoraGalleryNode.setUiState(this.id, this.properties.lora_gallery_unique_id, { 
