@@ -789,8 +789,8 @@ NODE_CLASS_MAPPINGS = {
     "LocalLoraGalleryStackApply": LocalLoraGalleryStackApply,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LocalLoraGallery": "Local Lora Gallery",
-    "LocalLoraGalleryModelOnly": "Local Lora Gallery (Model Only)",
-    "LocalLoraGalleryStacker": "Local Lora Gallery Stacker",
-    "LocalLoraGalleryStackApply": "Local Lora Gallery Stack Apply",
+    "LocalLoraGallery": "LoRA 本地画廊",
+    "LocalLoraGalleryModelOnly": "LoRA 本地画廊 (仅模型)",
+    "LocalLoraGalleryStacker": "LoRA 本地画廊堆叠器",
+    "LocalLoraGalleryStackApply": "LoRA 本地画廊堆叠应用",
 }
