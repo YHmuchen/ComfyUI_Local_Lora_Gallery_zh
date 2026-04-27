@@ -107,6 +107,68 @@ def get_lora_preview_asset_info(lora_name):
 
     return None, "none"
 
+async def _download_civitai_preview(session, civitai_version_data, lora_full_path):
+    """从Civitai下载LoRA的预览图/视频，保存到LoRA文件同目录。
+    返回 True 表示成功，False 表示失败。"""
+    images = civitai_version_data.get('images', [])
+    if not images:
+        print("Local Lora Gallery: No preview images found on Civitai.")
+        return False
+
+    preview_media = next((img for img in images if img.get('type') == 'image'), images[0])
+    preview_url = preview_media.get('url')
+    if not preview_url:
+        return False
+    is_video = preview_media.get('type') == 'video'
+
+    try:
+        if is_video:
+            if '/original=true/' in preview_url:
+                temp_url = preview_url.replace('/original=true/', '/transcode=true,width=450,optimized=true/')
+                final_url = os.path.splitext(temp_url)[0] + '.webm'
+            else:
+                url_obj = urlparse(preview_url)
+                path_parts = url_obj.path.split('/')
+                filename = path_parts.pop()
+                filename_base = os.path.splitext(filename)[0]
+                new_path = f"{'/'.join(path_parts)}/transcode=true,width=450,optimized=true/{filename_base}.webm"
+                final_url = url_obj._replace(path=new_path).geturl()
+            file_ext = '.webm'
+        else:
+            if '/original=true/' in preview_url:
+               final_url = preview_url.replace('/original=true/', '/width=450/')
+            else:
+                final_url = preview_url.replace('/width=\\d+/', '/width=450/') if '/width=' in preview_url else preview_url.replace(urlparse(preview_url).path, f"/width=450{urlparse(preview_url).path}")
+
+            path = urlparse(final_url).path
+            file_ext = os.path.splitext(path)[1]
+            if not file_ext or file_ext.lower() not in IMAGE_EXTENSIONS:
+                file_ext = '.jpg'
+    except Exception as e:
+        print(f"Local Lora Gallery: Failed to parse or modify URL '{preview_url}'. Error: {e}")
+        final_url = preview_url
+        file_ext = '.jpg' if not is_video else '.mp4'
+
+    lora_dir = os.path.dirname(lora_full_path)
+    lora_basename = os.path.splitext(os.path.basename(lora_full_path))[0]
+    save_path = os.path.join(lora_dir, lora_basename + file_ext)
+
+    try:
+        async with session.get(final_url) as download_response:
+            if download_response.status != 200:
+                print(f"Local Lora Gallery: Warning - Failed to download preview from {final_url}.")
+                return False
+            with open(save_path, 'wb') as f:
+                while True:
+                    chunk = await download_response.content.read(8192)
+                    if not chunk: break
+                    f.write(chunk)
+            print(f"Local Lora Gallery: Successfully downloaded preview to '{save_path}'")
+            return True
+    except Exception as e:
+        print(f"Local Lora Gallery: Preview download failed for {save_path}: {e}")
+        return False
+
 @server.PromptServer.instance.routes.post("/localloragallery/sync_civitai")
 async def sync_civitai_metadata(request):
     try:
@@ -228,6 +290,113 @@ async def sync_civitai_metadata(request):
     except Exception as e:
         import traceback
         print(f"Error in sync_civitai_metadata: {traceback.format_exc()}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/localloragallery/batch_sync_civitai")
+async def batch_sync_civitai_metadata(request):
+    """批量同步所有未与Civitai关联的LoRA的元数据（触发词、预览图、下载链接）。"""
+    try:
+        try:
+            data = await request.json()
+        except:
+            data = {}
+        skip_previews = data.get('skip_previews', False)
+
+        lora_files = folder_paths.get_filename_list("loras")
+        metadata = load_metadata()
+
+        # 找出所有未同步的LoRA（没有download_url的视为未同步）
+        unsynced = []
+        for lora_name in lora_files:
+            lora_meta = metadata.get(lora_name, {})
+            if not lora_meta.get('download_url'):
+                unsynced.append(lora_name)
+
+        if not unsynced:
+            print("Local Lora Gallery: All LoRAs are already synced with Civitai.")
+            return web.json_response({
+                "status": "ok", "synced": 0, "total": 0,
+                "message": "所有LoRA已同步到Civitai"
+            })
+
+        print(f"Local Lora Gallery: Starting batch sync for {len(unsynced)} unsynced LoRAs")
+
+        results = []
+        synced_count = 0
+
+        async with aiohttp.ClientSession() as session:
+            for i, lora_name in enumerate(unsynced):
+                print(f"Local Lora Gallery: Batch sync [{i+1}/{len(unsynced)}] {lora_name}")
+
+                lora_full_path = folder_paths.get_full_path("loras", lora_name)
+                if not lora_full_path:
+                    results.append({"lora": lora_name, "status": "error", "message": "文件未找到"})
+                    continue
+
+                lora_meta = metadata.get(lora_name, {})
+
+                # 计算哈希
+                model_hash = lora_meta.get('hash')
+                if not model_hash:
+                    model_hash = calculate_sha256(lora_full_path)
+                    if model_hash:
+                        lora_meta['hash'] = model_hash
+                    else:
+                        results.append({"lora": lora_name, "status": "error", "message": "哈希计算失败"})
+                        continue
+
+                try:
+                    # 从Civitai获取版本信息
+                    civitai_version_url = f"https://civitai.com/api/v1/model-versions/by-hash/{model_hash}"
+                    async with session.get(civitai_version_url) as response:
+                        if response.status != 200:
+                            results.append({"lora": lora_name, "status": "not_found", "message": f"Civitai未找到 (HTTP {response.status})"})
+                            continue
+                        civitai_version_data = await response.json()
+
+                    model_id = civitai_version_data.get('modelId')
+                    if not model_id:
+                        results.append({"lora": lora_name, "status": "error", "message": "无法获取modelId"})
+                        continue
+
+                    # 下载预览图
+                    if not skip_previews:
+                        try:
+                            await _download_civitai_preview(session, civitai_version_data, lora_full_path)
+                        except Exception as e:
+                            print(f"Local Lora Gallery: Preview download failed for {lora_name}: {e}")
+
+                    # 更新元数据
+                    trained_words = civitai_version_data.get('trainedWords', [])
+                    if trained_words:
+                        lora_meta['trigger_words'] = ", ".join(trained_words)
+
+                    lora_meta['download_url'] = f"https://civitai.com/models/{model_id}"
+                    metadata[lora_name] = lora_meta
+
+                    results.append({"lora": lora_name, "status": "ok"})
+                    synced_count += 1
+
+                except Exception as e:
+                    results.append({"lora": lora_name, "status": "error", "message": str(e)})
+
+                # 限速延迟，避免请求过快
+                await asyncio.sleep(1.0)
+
+        save_metadata(metadata)
+
+        print(f"Local Lora Gallery: Batch sync complete. {synced_count}/{len(unsynced)} synced successfully.")
+
+        return web.json_response({
+            "status": "ok",
+            "synced": synced_count,
+            "total": len(unsynced),
+            "results": results
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"Error in batch_sync_civitai: {traceback.format_exc()}")
         return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.get("/localloragallery/get_presets")
@@ -354,6 +523,7 @@ async def get_loras_endpoint(request):
                 "tags": lora_meta.get('tags', []),
                 "trigger_words": lora_meta.get('trigger_words', ''),
                 "download_url": lora_meta.get('download_url', ''),
+                "has_civitai": bool(lora_meta.get('download_url')),
             })
 
         sorted_folders = sorted(list(all_folders), key=lambda s: s.lower())
@@ -471,7 +641,7 @@ async def get_all_tags(request):
 
 class BaseLoraGallery:
     """Base class for common functionality."""
-    
+
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         return kwargs.get("selection_data", "")
@@ -480,20 +650,74 @@ class BaseLoraGallery:
         """Checks if the model is a Nunchaku-accelerated model and returns its type."""
         if not (is_nunchaku_flux_available or is_nunchaku_qwen_available or is_nunchaku_zimage_available):
             return 'none'
-        
+
         if not hasattr(model.model, 'diffusion_model'):
             return 'none'
-            
+
         wrapper_class_name = model.model.diffusion_model.__class__.__name__
-        
+
         if wrapper_class_name == 'ComfyFluxWrapper' and is_nunchaku_flux_available:
             return 'flux'
         elif wrapper_class_name == 'ComfyQwenImageWrapper' and is_nunchaku_qwen_available:
             return 'qwen'
         elif wrapper_class_name == 'ComfyZImageWrapper' and is_nunchaku_zimage_available:
             return 'zimage'
-        
+
         return 'none'
+
+    @staticmethod
+    def _extract_trigger_words_from_file(lora_name):
+        """从 safetensors 文件中读取 Kohya 训练触发词。
+        优先级: ss_output_name > ss_tag_frequency (高频词)"""
+        lora_path = folder_paths.get_full_path("loras", lora_name)
+        if not lora_path or not os.path.exists(lora_path):
+            return None
+        try:
+            from safetensors import safe_open
+            with safe_open(lora_path, framework="pt", device="cpu") as f:
+                meta = f.metadata()
+                if not meta:
+                    return None
+
+                # 1. 优先使用 ss_output_name (训练时指定的激活词)
+                output_name = meta.get("ss_output_name", "").strip()
+                if output_name:
+                    return output_name
+
+                # 2. 从 ss_tag_frequency 中提取高频标签（过滤掉低频通用标签）
+                if "ss_tag_frequency" in meta:
+                    tag_data = json.loads(meta["ss_tag_frequency"])
+                    if tag_data:
+                        first_key = list(tag_data.keys())[0]
+                        words_dict = tag_data[first_key]
+                        if words_dict:
+                            sorted_words = sorted(words_dict.items(), key=lambda x: x[1], reverse=True)
+                            max_freq = sorted_words[0][1]
+                            # 只保留频率 >= 50% 最高频的标签，最多 5 个
+                            threshold = max_freq * 0.5
+                            top_words = [word for word, freq in sorted_words if freq >= threshold][:5]
+                            if top_words:
+                                return ", ".join(top_words)
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _get_trigger_words(lora_name, all_metadata):
+        """获取触发词，优先从 metadata 读取，回退到 safetensors 文件"""
+        lora_meta = all_metadata.get(lora_name, {})
+        triggers = lora_meta.get('trigger_words', '').strip()
+        if not triggers:
+            extracted = BaseLoraGallery._extract_trigger_words_from_file(lora_name)
+            if extracted:
+                triggers = extracted
+                lora_meta['trigger_words'] = triggers
+                all_metadata[lora_name] = lora_meta
+                save_metadata(all_metadata)
+                print(f"LocalLoraGallery: Extracted trigger words from file for '{lora_name}': {triggers}")
+        if not triggers:
+            print(f"LocalLoraGallery: No trigger words found for '{lora_name}'")
+        return triggers
 
 class LocalLoraGallery(BaseLoraGallery):
     @classmethod
@@ -526,7 +750,7 @@ class LocalLoraGallery(BaseLoraGallery):
 
         nunchaku_model_type = self._get_nunchaku_model_type(model)
         loader_instance = None
-        
+
         if nunchaku_model_type == 'flux':
             loader_instance = NunchakuFluxLoraLoader()
             print("LocalLoraGallery: Using NunchakuFluxLoraLoader.")
@@ -547,8 +771,7 @@ class LocalLoraGallery(BaseLoraGallery):
             lora_name = config['lora']
 
             if config.get('use_trigger', True):
-                lora_meta = all_metadata.get(lora_name, {})
-                triggers = lora_meta.get('trigger_words', '').strip()
+                triggers = self._get_trigger_words(lora_name, all_metadata)
                 if triggers:
                     trigger_words_list.append(triggers)
 
@@ -625,8 +848,7 @@ class LocalLoraGalleryModelOnly(BaseLoraGallery):
             lora_name = config['lora']
 
             if config.get('use_trigger', True):
-                lora_meta = all_metadata.get(lora_name, {})
-                triggers = lora_meta.get('trigger_words', '').strip()
+                triggers = self._get_trigger_words(lora_name, all_metadata)
                 if triggers:
                     trigger_words_list.append(triggers)
 
@@ -687,8 +909,7 @@ class LocalLoraGalleryStacker(BaseLoraGallery):
 
             # TRIGGER_WORDS
             if config.get("use_trigger", True):
-                lora_meta = all_metadata.get(lora_name, {})
-                triggers = lora_meta.get("trigger_words", "").strip()
+                triggers = self._get_trigger_words(lora_name, all_metadata)
                 if triggers:
                     trigger_words_list.append(triggers)
 

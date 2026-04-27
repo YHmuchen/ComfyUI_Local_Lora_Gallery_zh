@@ -27,6 +27,20 @@ const LocalLoraGalleryNode = {
         }
     },
 
+    async batchSyncCivitai(skipPreviews = false) {
+        try {
+            const response = await api.fetchApi("/localloragallery/batch_sync_civitai", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ skip_previews: skipPreviews }),
+            });
+            return await response.json();
+        } catch (error) {
+            console.error("LocalLoraGallery: Batch sync failed:", error);
+            throw error;
+        }
+    },
+
     async updateMetadata(lora_name, data) {
         try {
             const body = { lora_name, ...data };
@@ -185,6 +199,14 @@ const LocalLoraGalleryNode = {
                     #${uniqueId} .locallora-controls-row input[type=text], #${uniqueId} .locallora-controls-row select { background: #222; color: #ccc; border: 1px solid #555; padding: 4px; border-radius: 4px; }
                     #${uniqueId} .tag-filter-mode-btn { padding: 4px 8px; background-color: #555; color: #fff; border: 1px solid #666; border-radius: 4px; cursor: pointer; flex-shrink: 0; }
                     #${uniqueId} .tag-filter-mode-btn:hover { background-color: #666; }
+                    #${uniqueId} .refresh-btn { padding: 4px 8px; background-color: #555; color: #fff; border: 1px solid #666; border-radius: 4px; cursor: pointer; flex-shrink: 0; font-size: 14px; line-height: 1; }
+                    #${uniqueId} .refresh-btn:hover { background-color: #666; }
+                    #${uniqueId} .batch-sync-btn { padding: 4px 8px; background-color: #006699; color: #fff; border: 1px solid #0088CC; border-radius: 4px; cursor: pointer; flex-shrink: 0; font-size: 12px; white-space: nowrap; transition: background-color 0.2s; }
+                    #${uniqueId} .batch-sync-btn:hover { background-color: #0088CC; }
+                    #${uniqueId} .batch-sync-btn.syncing { animation: pulse 1s infinite; pointer-events: none; background-color: #4a90e2; }
+                    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+                    #${uniqueId} .refresh-btn.refreshing { animation: spin 0.8s linear infinite; }
+                    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
                     #${uniqueId} .tag-filter-input-wrapper { display: flex; flex-grow: 1; position: relative; align-items: center; }
                     #${uniqueId} .tag-filter-input-wrapper input { flex-grow: 1; }
                     #${uniqueId} .clear-tag-filter-btn { background: none; border: none; color: #ccc; cursor: pointer; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; }
@@ -257,6 +279,8 @@ const LocalLoraGalleryNode = {
                                 <select class="folder-filter-select" style="max-width: 150px;">
                                     <option value="">全部文件夹</option>
                                 </select>
+                                <button class="refresh-btn" title="刷新LoRA列表">🔄</button>
+                                <button class="batch-sync-btn" title="为所有未同步Civitai的LoRA批量获取元数据">📥 批量获取C站</button>
                                 <button class="toggle-gallery-btn" title="切换画廊" style="margin-left: auto; flex-shrink: 0;">隐藏画廊</button>
                             </div>
                         </div>
@@ -282,6 +306,8 @@ const LocalLoraGalleryNode = {
             const multiSelectTagDropdown = multiSelectTagContainer.querySelector(".locallora-multiselect-tag-dropdown");
             const tagFilterModeBtn = widgetContainer.querySelector(".tag-filter-mode-btn");
             const toggleGalleryBtn = widgetContainer.querySelector(".toggle-gallery-btn");
+            const refreshBtn = widgetContainer.querySelector(".refresh-btn");
+            const batchSyncBtn = widgetContainer.querySelector(".batch-sync-btn");
             const selectedCountEl = widgetContainer.querySelector(".selected-count");
             const clearTagFilterBtn = widgetContainer.querySelector(".clear-tag-filter-btn");
             const folderFilterSelect = widgetContainer.querySelector(".folder-filter-select");
@@ -436,7 +462,7 @@ const LocalLoraGalleryNode = {
                 });
             };
             
-            const syncWithCivitai = async (loraName, card) => {
+            const syncWithCivitai = async (loraName, card, skipLoadAllTags = false) => {
                 const syncBtn = card.querySelector('.sync-civitai-btn');
                 syncBtn.textContent = '🔄';
                 syncBtn.classList.add('loading');
@@ -503,15 +529,19 @@ const LocalLoraGalleryNode = {
                         }
                         
                         renderCardTags(card);
-                        await loadAllTags();
+                        if (!skipLoadAllTags) {
+                            await loadAllTags();
+                        }
+                        return true;
                     } else {
                        throw new Error(result.message || 'Sync failed');
                     }
-            
+
                 } catch (error) {
                     console.error("LocalLoraGallery: Failed to sync with Civitai:", error);
                     syncBtn.textContent = '❌';
                     setTimeout(() => syncBtn.textContent = '☁️', 2000);
+                    return false;
                 } finally {
                     syncBtn.classList.remove('loading');
                     if(syncBtn.textContent !== '❌') syncBtn.textContent = '☁️';
@@ -1085,6 +1115,88 @@ const LocalLoraGalleryNode = {
                 loadPresetBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     presetDropdown.style.display = presetDropdown.style.display === 'block' ? 'none' : 'block';
+                });
+
+                refreshBtn.addEventListener("click", async () => {
+                    if (refreshBtn.classList.contains("refreshing")) return;
+                    refreshBtn.classList.add("refreshing");
+                    refreshBtn.disabled = true;
+
+                    this.currentPage = 1;
+                    this.totalPages = 1;
+                    this.availableLoras = [];
+                    this.loraData = this.loraData || [];
+                    foldersRendered = false;
+
+                    await loadAllTags();
+                    await loadPresets();
+                    await fetchAndRender(false);
+                    renderSelectedList();
+
+                    refreshBtn.classList.remove("refreshing");
+                    refreshBtn.disabled = false;
+                });
+
+                batchSyncBtn.addEventListener("click", async () => {
+                    if (batchSyncBtn.classList.contains("syncing")) return;
+
+                    // 从画廊 DOM 中找出所有未同步的卡片（没有 downloadUrl 的即未同步）
+                    const unsyncedCards = Array.from(galleryEl.querySelectorAll('.locallora-lora-card'))
+                        .filter(card => !card.dataset.downloadUrl);
+
+                    if (unsyncedCards.length === 0) {
+                        const origText = batchSyncBtn.textContent;
+                        const origBg = batchSyncBtn.style.backgroundColor;
+                        batchSyncBtn.textContent = "✅ 全部已同步";
+                        batchSyncBtn.style.backgroundColor = "#2a5";
+                        batchSyncBtn.style.color = "#fff";
+                        setTimeout(() => {
+                            batchSyncBtn.textContent = origText;
+                            batchSyncBtn.style.backgroundColor = origBg;
+                            batchSyncBtn.style.color = "";
+                        }, 2000);
+                        return;
+                    }
+
+                    batchSyncBtn.classList.add("syncing");
+                    batchSyncBtn.disabled = true;
+
+                    const total = unsyncedCards.length;
+                    let completed = 0;
+                    let failed = 0;
+
+                    batchSyncBtn.textContent = `⏳ 0/${total}`;
+
+                    for (const card of unsyncedCards) {
+                        // 卡片可能因搜索/筛选被移除 DOM，跳过
+                        if (!card.isConnected) {
+                            completed++;
+                            failed++;
+                            batchSyncBtn.textContent = `⏳ ${completed}/${total}`;
+                            continue;
+                        }
+
+                        const loraName = card.dataset.loraName;
+                        const ok = await syncWithCivitai(loraName, card, true); // 跳过单个 loadAllTags
+                        if (!ok) failed++;
+                        completed++;
+                        batchSyncBtn.textContent = `⏳ ${completed}/${total}`;
+                    }
+
+                    // 最后一次性刷新标签下拉列表
+                    await loadAllTags();
+
+                    const successCount = completed - failed;
+                    batchSyncBtn.classList.remove("syncing");
+                    batchSyncBtn.textContent = `✅ ${successCount}/${total}`;
+                    batchSyncBtn.style.backgroundColor = "#2a5";
+                    batchSyncBtn.style.color = "#fff";
+                    setTimeout(() => {
+                        batchSyncBtn.textContent = "📥 批量获取C站";
+                        batchSyncBtn.style.backgroundColor = "";
+                        batchSyncBtn.style.color = "";
+                        batchSyncBtn.disabled = false;
+                    }, 3000);
                 });
 
                 toggleGalleryBtn.addEventListener("click", () => {
